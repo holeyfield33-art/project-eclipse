@@ -1,4 +1,4 @@
-# Eclipse FastAPI Gateway
+# Eclipse FastAPI Gateway (Security Foundation)
 
 ## Run locally
 
@@ -9,24 +9,22 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
-Open http://localhost:8000/docs
+## Tests
 
-## Environment
+```bash
+cd backend/api
+pip install -r requirements.txt
+PYTHONPATH=. pytest tests/security/ -v
+```
 
-Copy from root `.env.example` (create one) or set:
+## Security controls
 
-- `DATABASE_URL`
-- `NEO4J_URI` / `NEO4J_USER` / `NEO4J_PASSWORD`
-- `ELASTICSEARCH_URL`
-- `KAFKA_BOOTSTRAP`
-- `REDIS_URL`
-- `SECRET_KEY`
+- Fail-closed production secrets
+- bcrypt + JWT auth
+- Centralized RBAC
+- Tenant isolation
+- Append-only audit with hash chain
+- Rate limits on login/register
+- Mass-assignment protection
 
-## Next implementation steps
-
-1. Wire SQLAlchemy models + Alembic migrations
-2. Implement JWT auth with role claims
-3. Connect Neo4j driver for entity graph
-4. Connect Elasticsearch for search
-5. Call ML scoring service on new transactions
-6. Immutable audit log middleware
+See `docs/security-invariants.md`.
