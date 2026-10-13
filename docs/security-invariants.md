@@ -1,35 +1,9 @@
-# Eclipse Security Invariants
+# Development security boundary
 
-Non-negotiable properties of the security foundation. Each invariant is enforced
-in code and covered by automated tests under `backend/api/tests/security/`.
+The current API uses an in-memory development store. It has no production-grade persistence or durable tenant isolation. The earlier invariant table referred to test and implementation files that were not present in the repository; see `SECURITY_HARDENING_REPORT.md`.
 
-| ID | Invariant | Primary tests |
-|----|-----------|---------------|
-| I-001 | Anonymous users cannot access protected resources | `test_authentication.py` |
-| I-002 | Users cannot access another tenant's resources | `test_tenant_isolation.py`, `test_idor.py` |
-| I-003 | Clients cannot assign themselves privileges | `test_authentication.py`, `test_mass_assignment.py` |
-| I-004 | Clients cannot forge audit actors | `test_audit_integrity.py` |
-| I-005 | Audit records cannot be modified through the application | `test_audit_integrity.py` |
-| I-006 | Production cannot start with development secrets | `test_secret_configuration.py` |
-| I-007 | Raw sensitive identifiers are never emitted in logs/audit details | `audit.py` sanitizer; `docs/entity-privacy.md` |
-| I-008 | Risk scores cannot be client-controlled | Server-computed only |
-| I-009 | Authorization is checked server-side | `deps.py` + RBAC matrix tests |
-| I-010 | Every privileged action produces an audit event | `test_audit_integrity.py` |
+The tracked tests in `backend/api/tests/` cover anonymous denial on protected routes, strict registration payloads, stale/forged JWT claims, login, process-local throttling, cross-tenant entity/alert/case reads and case links, explicit 501 responses for unfinished writes, and tamper detection for the process-local per-tenant audit chain. These are bounded properties of this development implementation.
 
-## Audit integrity guarantee (honest scope)
+All entity, alert, case and report routes require authentication at the router boundary. Mutating case routes require the corresponding role permission; unfinished alert writes and exports return 501. Reads and case links use tenant-scoped in-memory records, but this does not establish real database tenant isolation. Registration creates a new tenant per account and never accepts role or tenant from the client. There is no public path to provision elevated roles or additional tenant members.
 
-- Application layer: no update/delete endpoints; actor_id and timestamps server-generated.
-- Tamper evidence: per-tenant SHA-256 hash chain detects modified/deleted/reordered/inserted events.
-- NOT claimed: cryptographic immutability or WORM storage. Pair with DB INSERT-only grants and log shipping in production.
-
-## Alert action matrix
-
-| Action | analyst | manager | admin | auditor |
-|--------|---------|---------|-------|---------|
-| flag | yes | yes | yes | no |
-| escalate | yes | yes | yes | no |
-| dismiss | no | yes | yes | no |
-| freeze | no | yes | yes | no |
-| report | no | yes | yes | no |
-
-Encoded in `app.core.rbac.ALERT_ACTION_PERMISSIONS`.
+The audit chain contains only server-derived opaque actor/resource IDs, action names and timestamps. It is application-level tamper evidence, not immutable or independent storage. Production use requires a durable data layer with tenant-scoped queries, independent audit persistence, and tests against those real paths.

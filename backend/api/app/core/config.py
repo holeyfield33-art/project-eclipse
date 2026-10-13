@@ -10,13 +10,14 @@ import sys
 from typing import List, Optional
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 DEV_SECRET_PLACEHOLDER = "change-me-in-production-use-hsm"
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", case_sensitive=True)
     PROJECT_NAME: str = "Project Eclipse"
     VERSION: str = "2.0.0"
     API_V1_STR: str = "/api/v1"
@@ -56,10 +57,6 @@ class Settings(BaseSettings):
     RATE_LIMIT_REGISTER_PER_MINUTE: int = 5
     RATE_LIMIT_DEFAULT_PER_MINUTE: int = 120
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
-
     @field_validator("SECRET_KEY")
     @classmethod
     def secret_not_empty(cls, v: str) -> str:
@@ -91,6 +88,8 @@ class Settings(BaseSettings):
             raise RuntimeError(
                 "FATAL: Production CORS_ORIGINS must be an explicit allow-list (no '*')."
             )
+        if self.ENABLE_DOCS:
+            raise RuntimeError("FATAL: Production API docs must be disabled.")
 
 
 def load_settings() -> Settings:

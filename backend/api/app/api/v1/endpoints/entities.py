@@ -1,8 +1,10 @@
-"""Entity resolution, profiles, network graph, risk scores."""
+"""Tenant-scoped entity reads over the process-local development store."""
 
-from typing import List, Optional
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
+
+from app.api.deps import current_user, tenant_record
+from app.services import store
 
 router = APIRouter()
 
@@ -10,60 +12,46 @@ router = APIRouter()
 class EntitySummary(BaseModel):
     id: str
     name: str
-    entity_type: str  # person | company | wallet | account
-    risk_score: float = Field(..., ge=0, le=100)
+    entity_type: str
+    risk_score: float = Field(ge=0, le=100)
     linked_count: int = 0
-    last_activity: Optional[str] = None
+    last_activity: str | None = None
 
 
 class EntityProfile(EntitySummary):
-    hashed_identifiers: List[str] = []
+    hashed_identifiers: list[str] = Field(default_factory=list)
     transaction_count: int = 0
-    geographic_flags: List[str] = []
+    geographic_flags: list[str] = Field(default_factory=list)
     dark_web_mentions: int = 0
-    shap_explanation: Optional[dict] = None
-
-
-class NetworkNode(BaseModel):
-    id: str
-    label: str
-    risk_score: float
-    entity_type: str
-
-
-class NetworkEdge(BaseModel):
-    source: str
-    target: str
-    relationship: str
-    weight: float = 1.0
+    feature_contributions: dict | None = None
 
 
 class NetworkGraph(BaseModel):
-    nodes: List[NetworkNode]
-    edges: List[NetworkEdge]
+    nodes: list[dict]
+    edges: list[dict]
 
 
-@router.get("/", response_model=List[EntitySummary])
+@router.get("/", response_model=list[EntitySummary])
 async def search_entities(
-    q: str = Query(..., min_length=2, description="Name, account, wallet, or company"),
+    q: str = Query(min_length=2, max_length=120),
     limit: int = Query(20, ge=1, le=100),
+    user: dict = Depends(current_user),
 ):
-    """Search entities by name, account number, wallet address, or company."""
-    # TODO: query Elasticsearch + Neo4j
-    return []
+    with store.lock:
+        return [e.copy() for e in store.entities.values()
+                if e["tenant_id"] == user["tenant_id"] and q.casefold() in e["name"].casefold()][:limit]
 
 
 @router.get("/{entity_id}", response_model=EntityProfile)
-async def get_entity(entity_id: str):
-    """Full entity profile with risk score and SHAP explanation."""
-    # TODO: fetch from Postgres + Neo4j + ML explainability service
-    raise HTTPException(status_code=404, detail="Entity not found (scaffold)")
+async def get_entity(entity_id: str, user: dict = Depends(current_user)):
+    with store.lock:
+        return tenant_record(store.entities, entity_id, user).copy()
 
 
 @router.get("/{entity_id}/network", response_model=NetworkGraph)
-async def get_entity_network(entity_id: str, depth: int = Query(2, ge=1, le=4)):
-    """Interactive network graph of connected entities."""
-    # TODO: Neo4j Cypher query for neighborhood
+async def get_entity_network(entity_id: str, depth: int = Query(2, ge=1, le=4), user: dict = Depends(current_user)):
+    with store.lock:
+        tenant_record(store.entities, entity_id, user)
     return NetworkGraph(nodes=[], edges=[])
 
 
@@ -71,8 +59,9 @@ async def get_entity_network(entity_id: str, depth: int = Query(2, ge=1, le=4)):
 async def get_entity_transactions(
     entity_id: str,
     limit: int = Query(50, ge=1, le=500),
-    offset: int = 0,
+    offset: int = Query(0, ge=0),
+    user: dict = Depends(current_user),
 ):
-    """Timeline of transactions for an entity."""
-    # TODO: Postgres + Elasticsearch
+    with store.lock:
+        tenant_record(store.entities, entity_id, user)
     return {"items": [], "total": 0}

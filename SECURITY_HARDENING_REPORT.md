@@ -1,57 +1,9 @@
-# Security Hardening Report — Project Eclipse
+# Security foundation status — Project Eclipse
 
-**Directive:** SECURITY HARDENING DIRECTIVE v1  
-**Repository:** holeyfield33-art/project-eclipse  
-**Status:** Implementation complete; 49/49 security tests passed locally
+The earlier report on `main` claimed 49 passing security tests and complete auth, tenant isolation, audit, and rate-limit modules. The referenced tests and most modules were absent from the tracked tree. That 49-test result is **unverified for the published commit** and must not be used as release evidence.
 
-## Summary
+This branch restores a process-local development foundation: registration creates an analyst in a new opaque tenant, login checks a bcrypt hash, and protected API groups verify a signed JWT against current server-side user state. Role and tenant claims alone do not grant access. Registration rejects client-supplied role/tenant fields. Entity and alert reads, case creation/reads/notes, and case assignment filter tenant IDs in the in-memory store; case links and assignees must also belong to that tenant. A per-tenant application audit hash chain records registration and case changes with opaque IDs. Login and registration have per-process IP limits. Unimplemented alert actions and report exports explicitly return 501 instead of success-shaped responses.
 
-Security foundation implemented on the existing scaffold without architecture redesign or product feature creep.
+This is **not ready for production or a pilot**. Production lifespan startup explicitly refuses the in-memory store. Users, tenant records, audit events, and rate limits are in memory, disappear on restart, and are not shared across workers. There is no tenant-member invitation/admin provisioning flow, durable database authorization, immutable audit storage, key rotation, or complete alert workflow. The entity network/transaction responses and geographic heatmap remain empty scaffold data; no ingestion populates the store. The audit hash chain detects changed entries during verification, but cannot establish that the last entry was not deleted without an independently anchored head. Local tests demonstrate only these bounded code paths, not the prior report's ten claimed invariants. The health endpoint and development registration/login remain public by design.
 
-### P0 CLOSED
-- Authentication (bcrypt + JWT, expire, inactive, invalid signature)
-- RBAC (centralized permissions + alert action matrix)
-- Tenant isolation (tenant_id on entities/alerts/cases/audit)
-- Secrets fail-closed in production
-- Alert action authorization + audit on every action
-- Append-only audit with SHA-256 hash chain + verification
-
-### P1 CLOSED
-- Entity privacy boundary documented; hashes vs display names
-- IDOR/BOLA tests on entity/alert/case endpoints
-- Input validation (limits, enums, extra=forbid mass assignment)
-- Rate limiting on /login and /register
-- CORS explicit origins; docs toggle via ENABLE_DOCS
-- ML terminology: `feature_contributions` (not SHAP); baseline documented honestly
-
-### P0 OPEN
-- None for the in-memory security foundation scope
-
-### P1 OPEN / Known limitations
-- Persistence still in-memory for the security foundation (Postgres schema hardened with tenant_id + audit columns; SQLAlchemy wiring is later phase)
-- Injection regression tests deferred until real DB query layer is implemented (parameterized queries required then)
-- Audit chain is application-level tamper evidence, not WORM/crypto immutability
-- Redis/ES/Kafka production auth documented but not enforced in local compose (by design)
-
-### Tests executed
-```
-PYTHONPATH=. pytest tests/security/ -v
-49 passed
-```
-
-### Dependency changes
-- Added: pytest, pytest-asyncio, email-validator (via pydantic[email])
-- Constrained bcrypt <4.1 for passlib compatibility
-- No heavyweight new frameworks
-
-### Key files
-- `app/core/config.py`, `security.py`, `rbac.py`
-- `app/api/deps.py`
-- `app/services/audit.py`, `store.py`, `rate_limit.py`
-- `tests/security/*`
-- `docs/security-invariants.md`, `docs/entity-privacy.md`
-- `data/schemas/postgres/001_init.sql` (tenant_id + audit hash columns)
-
-### Release rule
-P0 OPEN = 0 for implemented security boundary.  
-No Phase 1 pilot until real data layer inherits the same tenant/auth/audit invariants.
+Before production use, implement durable tenant-scoped persistence, transactions, shared limits, audit storage with independent integrity controls, secure provisioning and recovery, and complete endpoint-specific authorization. Repeat security tests against the actual data layer, including IDOR and injection cases.

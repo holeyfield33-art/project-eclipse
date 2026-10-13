@@ -15,10 +15,9 @@ from app.api.v1.router import api_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: connect DB, Kafka, Neo4j, etc.
-    # TODO: initialize connection pools
+    if settings.ENVIRONMENT.lower() == "production":
+        raise RuntimeError("Production startup requires durable tenant and audit storage")
     yield
-    # Shutdown: close connections
 
 
 app = FastAPI(
@@ -26,8 +25,8 @@ app = FastAPI(
     description="AI-powered threat intelligence and fraud detection platform",
     version="2.0.0",
     lifespan=lifespan,
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url="/docs" if settings.ENABLE_DOCS else None,
+    redoc_url="/redoc" if settings.ENABLE_DOCS else None,
 )
 
 app.add_middleware(
