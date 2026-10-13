@@ -91,6 +91,8 @@ class Settings(BaseSettings):
             raise RuntimeError(
                 "FATAL: Production CORS_ORIGINS must be an explicit allow-list (no '*')."
             )
+        if self.ENABLE_DOCS:
+            raise RuntimeError("FATAL: Production API docs must be disabled.")
 
 
 def load_settings() -> Settings:

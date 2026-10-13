@@ -2,9 +2,11 @@
 
 from typing import List, Optional
 from enum import Enum
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, HTTPException, Depends
 from pydantic import BaseModel
 from datetime import datetime
+from app.api.deps import require
+from app.core.rbac import Permission
 
 router = APIRouter()
 
@@ -59,7 +61,7 @@ async def list_cases(
     return []
 
 
-@router.post("/", response_model=Case)
+@router.post("/", response_model=Case, dependencies=[Depends(require(Permission.CASES_WRITE))])
 async def create_case(payload: CaseCreate):
     # TODO: create case, link entities/alerts, audit log
     from fastapi import HTTPException
@@ -72,13 +74,13 @@ async def get_case(case_id: str):
     raise HTTPException(status_code=404, detail="Case not found (scaffold)")
 
 
-@router.post("/{case_id}/notes")
+@router.post("/{case_id}/notes", dependencies=[Depends(require(Permission.CASES_WRITE))])
 async def add_note(case_id: str, note: CaseNote):
     # TODO: append immutable note + audit
-    return {"status": "ok", "case_id": case_id}
+    raise HTTPException(status_code=501, detail="Case notes require a persistent audited workflow")
 
 
-@router.patch("/{case_id}/assign")
+@router.patch("/{case_id}/assign", dependencies=[Depends(require(Permission.CASES_ASSIGN))])
 async def assign_case(case_id: str, assignee_id: str):
     # TODO: manager/admin only
-    return {"status": "ok", "case_id": case_id, "assigned_to": assignee_id}
+    raise HTTPException(status_code=501, detail="Assignment requires a persistent audited workflow")

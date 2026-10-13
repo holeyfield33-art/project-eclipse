@@ -42,6 +42,7 @@ def create_access_token(
         "iat": datetime.now(timezone.utc),
     }
     if extra_claims:
+        extra_claims = extra_claims.copy()
         for key in ("sub", "tenant_id", "role", "exp", "iat"):
             extra_claims.pop(key, None)
         payload.update(extra_claims)

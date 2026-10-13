@@ -1,4 +1,4 @@
-# Eclipse FastAPI Gateway (Security Foundation)
+# Eclipse FastAPI Gateway (Development Security Foundation)
 
 ## Run locally
 
@@ -14,17 +14,17 @@ uvicorn app.main:app --reload --port 8000
 ```bash
 cd backend/api
 pip install -r requirements.txt
-PYTHONPATH=. pytest tests/security/ -v
+python -m pytest tests/ -v
 ```
 
 ## Security controls
 
-- Fail-closed production secrets
+- Production secret validation (production deployment remains unsupported)
 - bcrypt + JWT auth
 - Centralized RBAC
-- Tenant isolation
-- Append-only audit with hash chain
-- Rate limits on login/register
+- New opaque tenant per registered account; real data-layer isolation remains unbuilt
+- Process-local append-only audit hash chain
+- Process-local rate limits on login/register
 - Mass-assignment protection
 
-See `docs/security-invariants.md`.
+See `../../docs/security-invariants.md` and `../../SECURITY_HARDENING_REPORT.md` for the bounded scope and open production work.

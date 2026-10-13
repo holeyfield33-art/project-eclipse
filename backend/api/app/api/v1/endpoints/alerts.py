@@ -2,9 +2,11 @@
 
 from typing import List, Optional
 from enum import Enum
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Depends, HTTPException
 from pydantic import BaseModel, Field
 from datetime import datetime
+from app.api.deps import current_user
+from app.core.rbac import can_perform_alert_action
 
 router = APIRouter()
 
@@ -32,14 +34,14 @@ class Alert(BaseModel):
     status: AlertStatus = AlertStatus.NEW
     title: str
     description: str
-    factors: dict = {}  # contributing risk factors + SHAP
+    factors: dict = Field(default_factory=dict)
     created_at: datetime
     updated_at: Optional[datetime] = None
 
 
 class AlertAction(BaseModel):
     action: str  # flag | freeze | report | escalate | dismiss
-    note: Optional[str] = None
+    note: Optional[str] = Field(default=None, max_length=2000)
 
 
 @router.get("/", response_model=List[Alert])
@@ -74,7 +76,9 @@ async def get_alert(alert_id: str):
 
 
 @router.post("/{alert_id}/actions")
-async def perform_action(alert_id: str, action: AlertAction):
+async def perform_action(alert_id: str, action: AlertAction, user: dict = Depends(current_user)):
     """Flag, freeze, report, escalate, or dismiss an alert."""
     # TODO: update status, write immutable audit log, optionally trigger workflows
-    return {"status": "accepted", "alert_id": alert_id, "action": action.action}
+    if not can_perform_alert_action(user["role"], action.action):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    raise HTTPException(status_code=501, detail="Alert actions require a persistent audited workflow")

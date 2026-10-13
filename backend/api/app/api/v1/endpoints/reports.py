@@ -1,10 +1,12 @@
 """Pre-built and custom compliance reports (SAR, executive, etc.)."""
 
 from typing import Optional, List
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from datetime import date
+from app.api.deps import require
+from app.core.rbac import Permission
 
 router = APIRouter()
 
@@ -40,7 +42,7 @@ async def list_templates():
     ]
 
 
-@router.get("/generate/{template_id}")
+@router.get("/generate/{template_id}", dependencies=[Depends(require(Permission.REPORTS_GENERATE))])
 async def generate_report(
     template_id: str,
     start_date: Optional[date] = None,
@@ -49,9 +51,4 @@ async def generate_report(
 ):
     """Generate a report. Returns downloadable file (scaffold returns stub)."""
     # TODO: query data, render PDF/CSV, stream response
-    content = f"# Eclipse Report: {template_id}\nGenerated (scaffold)\n"
-    return StreamingResponse(
-        iter([content.encode()]),
-        media_type="text/plain",
-        headers={"Content-Disposition": f"attachment; filename={template_id}.txt"},
-    )
+    raise HTTPException(status_code=501, detail="Report generation is not implemented")
