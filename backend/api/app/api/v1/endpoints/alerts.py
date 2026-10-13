@@ -1,12 +1,14 @@
-"""Alert management – live feed, prioritization, actions."""
+"""Tenant-scoped alert reads; alert actions await a durable workflow."""
 
-from typing import List, Optional
+from datetime import datetime, timedelta, timezone
 from enum import Enum
-from fastapi import APIRouter, Query, Depends, HTTPException
-from pydantic import BaseModel, Field
-from datetime import datetime
-from app.api.deps import current_user
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.api.deps import current_user, tenant_record
 from app.core.rbac import can_perform_alert_action
+from app.services import store
 
 router = APIRouter()
 
@@ -29,56 +31,62 @@ class Alert(BaseModel):
     id: str
     entity_id: str
     entity_name: str
-    risk_score: float = Field(..., ge=0, le=100)
+    risk_score: float = Field(ge=0, le=100)
     severity: AlertSeverity
     status: AlertStatus = AlertStatus.NEW
     title: str
     description: str
     factors: dict = Field(default_factory=dict)
     created_at: datetime
-    updated_at: Optional[datetime] = None
+    updated_at: datetime | None = None
 
 
 class AlertAction(BaseModel):
-    action: str  # flag | freeze | report | escalate | dismiss
-    note: Optional[str] = Field(default=None, max_length=2000)
+    model_config = ConfigDict(extra="forbid")
+    action: str
+    note: str | None = Field(default=None, max_length=2000)
 
 
-@router.get("/", response_model=List[Alert])
+@router.get("/", response_model=list[Alert])
 async def list_alerts(
-    severity: Optional[AlertSeverity] = None,
-    status: Optional[AlertStatus] = None,
+    severity: AlertSeverity | None = None,
+    status: AlertStatus | None = None,
     limit: int = Query(50, ge=1, le=200),
-    offset: int = 0,
+    offset: int = Query(0, ge=0),
+    user: dict = Depends(current_user),
 ):
-    """Live feed of alerts with optional filters."""
-    # TODO: query from Postgres / Elasticsearch ordered by risk + recency
-    return []
+    with store.lock:
+        records = [a.copy() for a in store.alerts.values() if a["tenant_id"] == user["tenant_id"]]
+    records = [a for a in records if (severity is None or a["severity"] == severity)
+               and (status is None or a["status"] == status)]
+    records.sort(key=lambda a: a["created_at"], reverse=True)
+    return records[offset:offset + limit]
 
 
 @router.get("/overview")
-async def threat_overview():
-    """High/Medium/Low counts, new alerts, geographic summary."""
+async def threat_overview(user: dict = Depends(current_user)):
+    with store.lock:
+        records = [a.copy() for a in store.alerts.values() if a["tenant_id"] == user["tenant_id"]]
+    recent = datetime.now(timezone.utc) - timedelta(hours=24)
     return {
-        "high": 0,
-        "medium": 0,
-        "low": 0,
-        "new_last_24h": 0,
+        "high": sum(a["severity"] == AlertSeverity.HIGH for a in records),
+        "medium": sum(a["severity"] == AlertSeverity.MEDIUM for a in records),
+        "low": sum(a["severity"] == AlertSeverity.LOW for a in records),
+        "new_last_24h": sum(a["status"] == AlertStatus.NEW and a["created_at"] >= recent for a in records),
         "geographic_heatmap": [],
     }
 
 
 @router.get("/{alert_id}", response_model=Alert)
-async def get_alert(alert_id: str):
-    # TODO
-    from fastapi import HTTPException
-    raise HTTPException(status_code=404, detail="Alert not found (scaffold)")
+async def get_alert(alert_id: str, user: dict = Depends(current_user)):
+    with store.lock:
+        return tenant_record(store.alerts, alert_id, user).copy()
 
 
 @router.post("/{alert_id}/actions")
 async def perform_action(alert_id: str, action: AlertAction, user: dict = Depends(current_user)):
-    """Flag, freeze, report, escalate, or dismiss an alert."""
-    # TODO: update status, write immutable audit log, optionally trigger workflows
     if not can_perform_alert_action(user["role"], action.action):
         raise HTTPException(status_code=403, detail="Forbidden")
+    with store.lock:
+        tenant_record(store.alerts, alert_id, user)
     raise HTTPException(status_code=501, detail="Alert actions require a persistent audited workflow")
